@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safari NIKKE Guard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4 5.6v6.1c0 4.7 3.3 8.6 8 9.8 4.7-1.2 8-5.1 8-9.8V5.6L12 2.5Z" fill="currentColor"/><path d="m8.6 12.2 2.4 2.4 4.6-4.9" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="brand-name">Safari NIKKE Guard</span>
+  </div>
+  <span class="ver" id="ver">v1.0.0</span>
+</header>
+
+<main>
+  <!-- Start -->
+  <section id="v-start" class="view">
+    <div class="start">
+      <div class="start-main">
+        <h1>NIKKE 런처<br>악성코드 점검</h1>
+        <p class="lead">2026년 9월 27일부터 NIKKE PC 런처를 통해 원격 제어 악성코드가 배포됨. 이 PC의 감염 흔적 검사.</p>
+        <button class="primary" id="btn-quick">검사 시작</button>
+        <div class="alt">
+          <button class="link" id="btn-full">전체 검사</button>
+          <button class="link" id="btn-folder">폴더 지정</button>
+        </div>
+        <ul class="promise">
+          <li>읽기 전용: 파일·레지스트리 변경 없음</li>
+          <li>외부 통신 없음</li>
+        </ul>
+      </div>
+      <aside class="start-side">
+        <h2>검사 대상</h2>
+        <ol class="targets">
+          <li><b>런처 로그</b><span>에이전트 실행 · 다운로드 기록</span></li>
+          <li><b>에이전트 파일</b><span>LuaJIT 페이로드</span></li>
+          <li><b>런처 데이터</b><span>에이전트 상태 · 악성 스크립트 캐시</span></li>
+          <li><b>브라우저 DLL</b><span>Chrome · Edge · Brave · Vivaldi · Opera</span></li>
+          <li><b>레지스트리</b><span>COM 등록 키</span></li>
+          <li><b>임시 파일</b><span>자격 증명 · 화면 캡처 흔적</span></li>
+          <li><b>실행 중 프로그램</b><span>런처 · 로드된 DLL</span></li>
+          <li><b>hosts</b><span>악성 도메인 차단 여부</span></li>
+        </ol>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Scanning -->
+  <section id="v-scan" class="view" hidden>
+    <div class="scan">
+      <h1 class="scan-title">검사 중</h1>
+      <ol class="phases" id="phases"></ol>
+      <div class="scan-meta">
+        <span id="scan-count">0</span>개 항목
+      </div>
+      <div class="scan-path" id="scan-path">&nbsp;</div>
+      <button class="ghost" id="btn-cancel">중단</button>
+    </div>
+  </section>
+
+  <!-- Result -->
+  <section id="v-result" class="view" hidden>
+    <div class="verdict" id="verdict">
+      <div class="verdict-text">
+        <div class="verdict-label" id="v-label"></div>
+        <div class="verdict-sub" id="v-sub"></div>
+      </div>
+      <dl class="answers" id="answers"></dl>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="steps" aria-selected="true">조치</button>
+      <button role="tab" data-tab="findings">발견 항목 <span class="count" id="n-findings"></span></button>
+      <button role="tab" data-tab="details">상세</button>
+    </nav>
+    <div class="panel" id="p-steps" role="tabpanel"></div>
+    <div class="panel" id="p-findings" role="tabpanel" hidden></div>
+    <div class="panel" id="p-details" role="tabpanel" hidden></div>
+  </section>
+</main>
+
+<footer class="actions" id="actions" hidden>
+  <label class="toggle"><input type="checkbox" id="redact" checked> 개인정보 가림</label>
+  <span class="spacer"></span>
+  <button class="ghost" id="btn-copy">리포트 복사</button>
+  <button class="ghost" id="btn-save">리포트 저장</button>
+  <button class="ghost" id="btn-rescan">재검사</button>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>

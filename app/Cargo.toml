@@ -1,0 +1,27 @@
+[package]
+name = "safari-nikke-guard"
+description = "Safari NIKKE Guard: NIKKE PC launcher malware check"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "safari-nikke-guard"
+path = "src/main.rs"
+
+[features]
+# Embed ui/ in the exe. Without it a plain `cargo build` runs in dev mode.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+sng-core = { path = "../core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }

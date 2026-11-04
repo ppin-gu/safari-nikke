@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["core", "app"]
+# The Tauri app only builds on Windows (CI). `cargo test` builds the engine alone.
+default-members = ["core"]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/ppin-gu/safari-nikke"
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1
