@@ -186,6 +186,152 @@ pub fn local_drives() -> Vec<PathBuf> {
     out
 }
 
+// ---------- Changes (remedy only) ----------
+
+pub struct WinOps;
+
+impl crate::remedy::Ops for WinOps {
+    fn kill(&self, pid: u32) -> Result<(), String> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_TERMINATE};
+        const SYNCHRONIZE: u32 = 0x0010_0000;
+        unsafe {
+            let h = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, 0, pid);
+            if h.is_null() {
+                return Err(format!("프로세스 열기 실패 (오류 {})", std::io::Error::last_os_error()));
+            }
+            let ok = TerminateProcess(h, 1) != 0;
+            if ok {
+                WaitForSingleObject(h, 5000);
+            }
+            CloseHandle(h);
+            if ok {
+                Ok(())
+            } else {
+                Err(format!("종료 실패 ({})", std::io::Error::last_os_error()))
+            }
+        }
+    }
+
+    fn delete_clsid(&self) -> Result<(), String> {
+        use winreg::enums::KEY_ALL_ACCESS;
+        let mut err = None;
+        for flag in [KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
+            let Ok(parent) = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(r"Software\Classes\CLSID", KEY_ALL_ACCESS | flag)
+            else {
+                continue;
+            };
+            if let Err(e) = parent.delete_subkey_all(iocs::CLSID) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    err = Some(format!("삭제 실패: {e}"));
+                }
+            }
+        }
+        err.map_or(Ok(()), Err)
+    }
+
+    fn block(&self) -> Result<Vec<String>, String> {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let out = std::env::temp_dir().join(format!("sng-block-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&out);
+        let code = run_elevated(&exe, &format!("--apply-block \"{}\"", out.display()))?;
+        let text = std::fs::read_to_string(&out).map_err(|_| format!("차단 작업 결과 없음 (종료 코드 {code})"))?;
+        let _ = std::fs::remove_file(&out);
+        let r: Result<Vec<String>, String> = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        r
+    }
+}
+
+/// Starts `exe args` with a UAC prompt, waits for it and returns its exit code.
+pub fn run_elevated(exe: &std::path::Path, args: &str) -> Result<u32, String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError};
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE};
+    use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
+    let w = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let verb = w("runas");
+    let file = w(&exe.display().to_string());
+    let params = w(args);
+    unsafe {
+        let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
+        info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
+        info.fMask = SEE_MASK_NOCLOSEPROCESS;
+        info.lpVerb = verb.as_ptr();
+        info.lpFile = file.as_ptr();
+        info.lpParameters = params.as_ptr();
+        info.nShow = 0;
+        if ShellExecuteExW(&mut info) == 0 {
+            let e = GetLastError();
+            return Err(if e == 1223 {
+                "관리자 권한 요청 취소됨".into()
+            } else {
+                format!("관리자 권한 실행 실패 (오류 {e})")
+            });
+        }
+        if info.hProcess.is_null() {
+            return Err("관리자 권한 실행 실패".into());
+        }
+        WaitForSingleObject(info.hProcess, INFINITE);
+        let mut code = 0u32;
+        GetExitCodeProcess(info.hProcess, &mut code);
+        CloseHandle(info.hProcess);
+        Ok(code)
+    }
+}
+
+/// The elevated child: hosts lines and outbound firewall rules for the attacker's IPs.
+/// Writes `Ok(lines)` or `Err(message)` as JSON to `out`.
+pub fn block_child(out: &std::path::Path) -> i32 {
+    let hosts = std::env::var_os("SystemRoot")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"))
+        .join(r"System32\drivers\etc\hosts");
+    let mut done = Vec::new();
+    let mut result: Result<Vec<String>, String> = match crate::remedy::add_hosts_lines(&hosts) {
+        Ok(lines) => {
+            done.extend(lines.into_iter().map(|l| format!("hosts: {l}")));
+            Ok(Vec::new())
+        }
+        Err(e) => Err(e),
+    };
+    if result.is_ok() {
+        for ip in iocs::BLOCK_IPS {
+            let name = format!("Safari NIKKE Guard block {ip}");
+            let exists = std::process::Command::new("netsh")
+                .args(["advfirewall", "firewall", "show", "rule", &format!("name={name}")])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if exists {
+                continue;
+            }
+            let ok = std::process::Command::new("netsh")
+                .args([
+                    "advfirewall",
+                    "firewall",
+                    "add",
+                    "rule",
+                    &format!("name={name}"),
+                    "dir=out",
+                    "action=block",
+                    &format!("remoteip={ip}"),
+                ])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if ok {
+                done.push(format!("방화벽: {ip}"));
+            } else {
+                result = Err(format!("방화벽 규칙 등록 실패: {ip}"));
+                break;
+            }
+        }
+    }
+    let result = result.map(|_| done);
+    let code = if result.is_ok() { 0 } else { 1 };
+    let _ = std::fs::write(out, serde_json::to_string(&result).unwrap_or_default());
+    code
+}
+
 #[cfg(test)]
 mod tests {
     use super::clean;

@@ -2527,7 +2527,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "safari-nikke-guard"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "qrcode",
  "serde",
@@ -2835,7 +2835,7 @@ checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
 
 [[package]]
 name = "sng-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "serde",

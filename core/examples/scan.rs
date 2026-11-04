@@ -1,4 +1,4 @@
-//! Command-line scan, for testing: `cargo run --example scan -- [--full | FOLDER] [--json] [--redact]`
+//! Command-line scan, for testing: `cargo run --example scan -- [--full | FOLDER] [--json | --plan] [--redact]`
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
@@ -22,7 +22,9 @@ fn main() {
     let r = scan(&env, mode, &folders, &AtomicBool::new(false), &|phase, n, _| {
         eprintln!("{phase} {n}")
     });
-    if json {
+    if args.iter().any(|a| a == "--plan") {
+        println!("{}", serde_json::to_string_pretty(&sng_core::remedy::plan(&r)).unwrap());
+    } else if json {
         println!("{}", serde_json::to_string_pretty(&r).unwrap());
     } else {
         let t = report::text(&r);

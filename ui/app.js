@@ -79,6 +79,7 @@ async function startScan(mode, folder) {
     show("result");
   } catch (e) {
     show("start");
+checkPending();
     toast(`검사 실패: ${e}`);
   } finally {
     scanning = false;
@@ -165,8 +166,134 @@ function renderSteps(r) {
     );
     list.append(li);
   }
-  $("p-steps").replaceChildren(list);
+  const holder = el("div", { class: "remedy", id: "remedy" }, el("p", { class: "empty" }, "조치 항목 불러오는 중"));
+  $("p-steps").replaceChildren(holder, list);
+  bridge.invoke("remedy_plan").then(renderRemedy).catch((e) => holder.replaceChildren(el("p", { class: "empty" }, `조치 항목 오류: ${e}`)));
 }
+
+// ---------- Selected remedy ----------
+
+const DLL_KINDS = ["delete_dll_folder", "delete_file"];
+
+function renderRemedy(plan) {
+  const box = $("remedy");
+  if (!box) return;
+  if (!plan.length) {
+    box.remove();
+    return;
+  }
+  const boxes = new Map();
+  const count = el("span", { class: "sel" });
+  const run = el("button", { class: "danger" }, "선택 항목 조치");
+  const refresh = () => {
+    const n = [...boxes.values()].filter((b) => b.checked).length;
+    count.textContent = `${n}개 선택`;
+    run.disabled = n === 0;
+  };
+  const items = plan.map((a) => {
+    const cb = el("input", { type: "checkbox" });
+    cb.checked = a.recommended;
+    boxes.set(a.id, cb);
+    cb.addEventListener("change", () => {
+      // The registry key goes first, or the DLL cannot be deleted.
+      const reg = plan.find((x) => x.kind === "delete_registry");
+      if (cb.checked && DLL_KINDS.includes(a.kind) && reg && !boxes.get(reg.id).checked) {
+        boxes.get(reg.id).checked = true;
+        toast("레지스트리 키 삭제도 선택됨 (DLL보다 먼저 필요)");
+      }
+      if (!cb.checked && a.kind === "delete_registry") {
+        for (const x of plan) if (DLL_KINDS.includes(x.kind)) boxes.get(x.id).checked = false;
+      }
+      refresh();
+    });
+    return el("li", { class: "act" },
+      el("label", {},
+        cb,
+        el("span", { class: "name" }, a.label),
+        a.admin ? el("span", { class: "badge admin" }, "관리자 권한") : el("span"),
+        el("span", { class: "what" }, a.kind === "kill_launcher" ? a.detail : a.target),
+        a.detail && a.kind !== "kill_launcher" ? el("span", { class: "why" }, a.detail) : null,
+      ),
+    );
+  });
+  run.addEventListener("click", () => confirmRemedy(plan.filter((a) => boxes.get(a.id).checked)));
+  box.replaceChildren(
+    el("div", { class: "remedy-head" }, el("h3", {}, "선택 조치"), el("p", {}, "체크한 항목만 실행 · 삭제 전 바탕화면에 증거 백업")),
+    el("ul", { class: "acts" }, ...items),
+    el("div", { class: "remedy-foot" }, run, count),
+  );
+  refresh();
+}
+
+function confirmRemedy(selected) {
+  const dlg = $("confirm");
+  $("confirm-list").replaceChildren(...selected.map((a) => el("li", {}, a.label, el("small", {}, a.kind === "kill_launcher" ? a.detail : a.target))));
+  const notes = ["삭제한 파일은 휴지통에 남지 않음."];
+  if (selected.some((a) => a.kind !== "kill_launcher" && a.kind !== "block")) notes.unshift("실행 전 바탕화면에 증거 백업 폴더 생성.");
+  if (selected.some((a) => a.admin)) notes.push("차단 등록은 관리자 권한 요청 창이 뜸.");
+  $("confirm-note").textContent = notes.join(" ");
+  const ok = $("confirm-ok");
+  const go = async () => {
+    dlg.close();
+    await runRemedy(selected.map((a) => a.id));
+  };
+  ok.onclick = go;
+  $("confirm-cancel").onclick = () => dlg.close();
+  dlg.showModal();
+}
+
+const STATUS = { done: "완료", failed: "실패", pending_reboot: "재시작 후", skipped: "건너뜀" };
+
+function renderOutcome(box, res, again) {
+  const parts = [el("div", { class: "remedy-head" }, el("h3", {}, "조치 결과"))];
+  if (res.backup) {
+    parts.push(el("div", { class: "backup" }, el("span", {}, "백업"), el("code", {}, res.backup), el("button", { class: "ghost small", onclick: () => reveal(res.backup) }, "위치 열기")));
+  }
+  parts.push(el("ul", { class: "outs" }, ...res.outcomes.map((o) =>
+    el("li", {}, el("span", { class: "st " + o.status }, STATUS[o.status]), el("span", {}, o.label), el("span", { class: "msg" }, o.message)),
+  )));
+  if (res.pending.length) {
+    parts.push(el("p", { class: "reboot" }, `Windows 재시작 후 이 프로그램을 다시 실행 → 남은 조치 ${res.pending.length}건 실행`));
+  }
+  parts.push(el("div", { class: "remedy-foot" }, el("button", { class: "ghost", onclick: again }, "재검사로 확인")));
+  box.replaceChildren(...parts);
+}
+
+async function runRemedy(ids) {
+  const box = $("remedy");
+  box.replaceChildren(el("p", { class: "empty" }, "조치 실행 중"));
+  try {
+    const res = await bridge.invoke("remedy_apply", { ids });
+    renderOutcome(box, res, () => startScan(last ? last.mode : "quick"));
+  } catch (e) {
+    box.replaceChildren(el("p", { class: "empty" }, `조치 실패: ${e}`));
+  }
+}
+
+async function checkPending() {
+  let list = [];
+  try {
+    list = await bridge.invoke("pending_list");
+  } catch {
+    return;
+  }
+  const b = $("pending");
+  b.hidden = !list.length;
+  if (!list.length) return;
+  $("pending-n").textContent = list.length;
+  $("pending-list").textContent = list.map((a) => a.target).join(", ");
+}
+
+$("btn-pending").addEventListener("click", async () => {
+  try {
+    const res = await bridge.invoke("pending_apply");
+    const failed = res.outcomes.filter((o) => o.status !== "done" && o.status !== "skipped");
+    toast(failed.length ? `남은 조치 ${failed.length}건 미완료: ${failed[0].message}` : "남은 조치 완료 · 재검사 권장");
+    checkPending();
+  } catch (e) {
+    toast(`실패: ${e}`);
+  }
+});
 
 function qr(name, url) {
   const box = el("div", { class: "svg", role: "img", "aria-label": `${name} QR 코드` });
@@ -297,3 +424,4 @@ $("btn-save").addEventListener("click", async () => {
 });
 
 show("start");
+checkPending();

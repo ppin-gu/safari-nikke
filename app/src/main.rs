@@ -1,4 +1,5 @@
-//! Safari NIKKE Guard window. The scan itself is in `sng-core` and only reads.
+//! Safari NIKKE Guard window. The scan in `sng-core` only reads; `remedy` runs
+//! only the actions the user ticked and confirmed.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
@@ -7,8 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use sng_core::model::{Mode, ScanResult};
+use sng_core::remedy::{self, Action, ApplyResult};
 use sng_core::{report, Env};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 #[derive(Default)]
@@ -146,7 +148,75 @@ fn reveal(path: String) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn remedy_plan(state: State<'_, App>) -> Vec<Action> {
+    state.last.lock().unwrap().as_ref().map(remedy::plan).unwrap_or_default()
+}
+
+fn pending_file(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_local_data_dir().ok().map(|d| d.join("pending.json"))
+}
+
+#[tauri::command]
+async fn remedy_apply(app: AppHandle, state: State<'_, App>, ids: Vec<String>) -> Result<ApplyResult, String> {
+    let Some(r) = state.last.lock().unwrap().clone() else {
+        return Err("검사 결과 없음".into());
+    };
+    // Only actions from the plan of the last scan, never targets sent by the page.
+    let selected: Vec<Action> = remedy::plan(&r).into_iter().filter(|a| ids.contains(&a.id)).collect();
+    if selected.is_empty() {
+        return Err("선택 항목 없음".into());
+    }
+    let desktop = app
+        .path()
+        .desktop_dir()
+        .ok()
+        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from));
+    let pending = pending_file(&app);
+    tauri::async_runtime::spawn_blocking(move || {
+        let env = Env::current();
+        let ops = remedy::system_ops();
+        let text = report::text(&r);
+        let res = remedy::apply(&env, ops.as_ref(), &r, &text, &selected, desktop.as_deref());
+        if let Some(f) = pending {
+            let _ = remedy::save_pending(&f, &res.pending);
+        }
+        res
+    })
+    .await
+    .map_err(|e| format!("조치 오류: {e}"))
+}
+
+#[tauri::command]
+fn pending_list(app: AppHandle) -> Vec<Action> {
+    pending_file(&app).map(|f| remedy::load_pending(&f)).unwrap_or_default()
+}
+
+#[tauri::command]
+async fn pending_apply(app: AppHandle) -> Result<ApplyResult, String> {
+    let Some(f) = pending_file(&app) else {
+        return Err("저장 위치 없음".into());
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let env = Env::current();
+        let ops = remedy::system_ops();
+        let res = remedy::apply_pending(&env, ops.as_ref(), &remedy::load_pending(&f));
+        let _ = remedy::save_pending(&f, &res.pending);
+        res
+    })
+    .await
+    .map_err(|e| format!("조치 오류: {e}"))
+}
+
 fn main() {
+    // Elevated child started by the "hosts · 방화벽 차단 등록" action.
+    #[cfg(windows)]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if args.len() == 3 && args[1] == "--apply-block" {
+            std::process::exit(sng_core::block_child(std::path::Path::new(&args[2])));
+        }
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(App::default())
@@ -157,7 +227,11 @@ fn main() {
             report_text,
             save_report,
             qr_svg,
-            reveal
+            reveal,
+            remedy_plan,
+            remedy_apply,
+            pending_list,
+            pending_apply
         ])
         .run(tauri::generate_context!())
         .expect("Safari NIKKE Guard 실행 실패");

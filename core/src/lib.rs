@@ -1,7 +1,8 @@
 //! Safari NIKKE Guard scan engine.
 //!
-//! Read-only: no check writes, moves or deletes a file, edits the registry or
-//! opens a network connection. The detection rules follow
+//! Scanning is read-only: no check writes, moves or deletes a file, edits the registry or
+//! opens a network connection. Only `remedy` changes anything, and only
+//! for the actions the user selected. The detection rules follow
 //! MotherSphere/NIKKE-Launcher-Check (GPL-3.0).
 
 pub mod checks;
@@ -9,11 +10,14 @@ pub mod env;
 pub mod iocs;
 pub mod locate;
 pub mod model;
+pub mod remedy;
 pub mod report;
 pub mod steps;
 pub mod util;
 #[cfg(windows)]
 mod win;
+#[cfg(windows)]
+pub use win::block_child;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;

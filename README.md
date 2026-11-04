@@ -4,7 +4,8 @@ NIKKE PC 런처 악성코드 점검기 (Windows 10/11)
 
 2026-09-27 ~ 2026-11-04, Level Infinite CDN의 런처 파일 4개가 변조되어 NIKKE PC 런처로 원격 제어 에이전트가 배포됨. 이 프로그램은 그 흔적을 검사하고 판정 결과에 맞는 조치 단계를 표시함.
 
-- **읽기 전용**: 파일 · 레지스트리 변경, 삭제 없음
+- **검사는 읽기 전용**: 파일 · 레지스트리 변경 없음
+- **조치는 선택한 항목만**: 체크 → 확인 창 → 실행, 삭제 전 증거 백업
 - **외부 통신 없음**: 네트워크 코드 없음
 - **소스 공개 · 자동 빌드**: exe는 GitHub Actions가 태그 소스로 빌드
 
@@ -40,6 +41,28 @@ Get-FileHash .\SafariNikkeGuard.exe
 - **조치**: 판정에 해당하는 단계만, 순서대로. 경로 복사 · 위치 열기 · 명령 복사 · QR
 - **발견 항목**: 치명 / 경고 / 정보
 - **상세**: 타임라인, 유출 가능 정보, hosts 차단 상태, 검사 위치
+
+## 선택 조치 (v1.1)
+
+조치 탭 상단에서 항목 체크 후 **선택 항목 조치** → 확인 창 → 실행.
+
+<img src="docs/images/remedy.png" width="60%" alt="선택 조치 목록">
+
+| 항목 | 동작 | 조건 |
+|---|---|---|
+| 런처 종료 | `nikke_launcher.exe` 종료 | 실행 직전 프로세스 이름 재확인 |
+| 레지스트리 키 삭제 | `HKCU\Software\Classes\CLSID\{E77CC89B-…}` 삭제 | 고정 키만 |
+| 지속 DLL 폴더 삭제 | `…\PlatformExperienceHelper\<64자리>` 삭제 | 레지스트리 키 삭제 후에만. DLL 사용 중이면 **재시작 후**로 보류 |
+| k2f 임시 파일 삭제 | `%TEMP%`에서 `k2f`로 시작하는 항목만 | Temp 폴더만 |
+| 런처 캐시 삭제 | `nikke_launcher\tbs_cache` 삭제 | 런처 종료 상태에서만 |
+| hosts · 방화벽 차단 | hosts에 도메인 3개, 방화벽 아웃바운드 규칙 IP 2개 | 관리자 권한(UAC) |
+
+- 실행 순서 고정: 런처 종료 → 증거 백업 → 레지스트리 → DLL → 임시 파일 → 캐시 → 차단
+- 대상은 실행 직전에 검사 패턴으로 다시 검증, 다르면 실행 안 함
+- 앱은 마지막 검사 결과로 만든 목록 안의 항목만 실행 (화면에서 경로를 바꿔 보낼 수 없음)
+- 증거 백업: 바탕화면 `니케점검_백업_<시각>\` (리포트, 로그 사본, DLL · 수집 파일은 이름 · SHA-256만 기록)
+- 재시작 후 보류 항목은 `%LOCALAPPDATA%\io.github.ppin-gu.safari-nikke-guard\pending.json`에 저장, 다음 실행 시 시작 화면에 **남은 조치 실행** 표시
+- 삭제한 파일은 휴지통에 남지 않음
 
 리포트 저장 · 복사 시 **개인정보 가림**(기본 켜짐): PC 이름, 사용자 이름, 프로필 경로, 에이전트 ID 치환.
 
@@ -92,12 +115,12 @@ cargo run --example scan -- --json           # 명령줄 검사
 구조:
 
 ```
-core/   검사 엔진 (sng-core, 읽기 전용)
-app/    Tauri 앱 (명령: scan, pick_folder, save_report, qr_svg, reveal)
+core/   검사 엔진 (sng-core, 읽기 전용) + remedy (선택 조치)
+app/    Tauri 앱 (검사, 리포트, 선택 조치, 재시작 후 조치)
 ui/     화면 (HTML/CSS/JS, Pretendard 폰트 내장)
 ```
 
-릴리스: `git tag v1.0.0 && git push origin v1.0.0` → Actions가 빌드 후 Releases에 exe와 SHA-256 첨부.
+릴리스: `git tag v1.1.0 && git push origin v1.1.0` → Actions가 빌드 후 Releases에 exe와 SHA-256 첨부.
 
 ## 출처 · 라이선스
 

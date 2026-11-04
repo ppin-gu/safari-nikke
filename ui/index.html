@@ -12,12 +12,19 @@
     <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 4 5.6v6.1c0 4.7 3.3 8.6 8 9.8 4.7-1.2 8-5.1 8-9.8V5.6L12 2.5Z" fill="currentColor"/><path d="m8.6 12.2 2.4 2.4 4.6-4.9" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     <span class="brand-name">Safari NIKKE Guard</span>
   </div>
-  <span class="ver" id="ver">v1.0.0</span>
+  <span class="ver" id="ver">v1.1.0</span>
 </header>
 
 <main>
   <!-- Start -->
   <section id="v-start" class="view">
+    <div class="pending" id="pending" hidden>
+      <div>
+        <b>재시작 후 남은 조치 <span id="pending-n"></span>건</b>
+        <span id="pending-list"></span>
+      </div>
+      <button class="primary small-primary" id="btn-pending">남은 조치 실행</button>
+    </div>
     <div class="start">
       <div class="start-main">
         <h1>NIKKE 런처<br>악성코드 점검</h1>
@@ -28,7 +35,7 @@
           <button class="link" id="btn-folder">폴더 지정</button>
         </div>
         <ul class="promise">
-          <li>읽기 전용: 파일·레지스트리 변경 없음</li>
+          <li>검사는 읽기 전용 · 조치는 선택한 항목만</li>
           <li>외부 통신 없음</li>
         </ul>
       </div>
@@ -88,6 +95,16 @@
   <button class="ghost" id="btn-save">리포트 저장</button>
   <button class="ghost" id="btn-rescan">재검사</button>
 </footer>
+
+<dialog class="confirm" id="confirm">
+  <h2>선택 항목 조치</h2>
+  <ol id="confirm-list"></ol>
+  <p class="confirm-note" id="confirm-note"></p>
+  <div class="confirm-btns">
+    <button class="ghost" id="confirm-cancel">취소</button>
+    <button class="danger" id="confirm-ok">조치 실행</button>
+  </div>
+</dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="app.js"></script>
