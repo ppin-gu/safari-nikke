@@ -1,0 +1,41 @@
+name: release
+
+# Push a tag like v1.0.0. The exe is built here from the tagged source, never uploaded by hand.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo test -p sng-core
+      - run: cargo build --release -p safari-nikke-guard
+      - name: Name and hash
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory out | Out-Null
+          Copy-Item target/release/safari-nikke-guard.exe out/SafariNikkeGuard.exe
+          $h = (Get-FileHash out/SafariNikkeGuard.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  SafariNikkeGuard.exe" | Out-File -Encoding ascii out/SHA256SUMS.txt
+          "HASH=$h" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          NIKKE PC 런처 악성코드 점검기 $env:GITHUB_REF_NAME
+
+          SafariNikkeGuard.exe 다운로드 후 실행. 설치 불필요 (Windows 10/11).
+          SmartScreen 경고: 추가 정보 → 실행
+
+          SHA-256: ``$env:HASH``
+
+          이 파일은 GitHub Actions가 태그 $env:GITHUB_REF_NAME 소스로 빌드함.
+          "@
+          gh release create $env:GITHUB_REF_NAME out/SafariNikkeGuard.exe out/SHA256SUMS.txt --title "Safari NIKKE Guard $env:GITHUB_REF_NAME" --notes $notes
