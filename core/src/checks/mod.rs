@@ -22,7 +22,9 @@ impl Collector {
     pub fn add(&mut self, severity: Severity, kind: Kind, title: &str, location: impl Into<String>, evidence: Vec<String>) {
         let location = location.into();
         // One finding per kind and location; extra evidence is merged into it.
-        if let Some(f) = self.findings.iter_mut().find(|f| f.kind == kind && f.location == location) {
+        // `C:\a/b` and `C:\a\b` are the same place on Windows.
+        let same = |a: &str| a.to_lowercase().replace('\\', "/") == location.to_lowercase().replace('\\', "/");
+        if let Some(f) = self.findings.iter_mut().find(|f| f.kind == kind && same(&f.location)) {
             for e in evidence {
                 if f.evidence.len() < MAX_EVIDENCE && !f.evidence.contains(&e) {
                     f.evidence.push(e);
