@@ -55,7 +55,13 @@ struct Set(BTreeMap<String, PathBuf>);
 
 impl Set {
     fn add(&mut self, p: PathBuf) {
-        let key = p.to_string_lossy().to_lowercase().trim_end_matches(['\\', '/']).to_string();
+        // `C:\a/b` and `C:\a\b` are the same folder on Windows.
+        let key = p
+            .to_string_lossy()
+            .to_lowercase()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_string();
         self.0.entry(key).or_insert(p);
     }
     fn into_vec(self) -> Vec<PathBuf> {
@@ -90,7 +96,14 @@ pub fn locate(env: &Env, mode: Mode, folders: &[PathBuf], cancel: &AtomicBool, p
 
     let roots: Vec<PathBuf> = if computer { env.roots.clone() } else { folders.to_vec() };
     let depth = if mode == Mode::Quick { QUICK_DEPTH } else { usize::MAX };
-    let skip: Vec<String> = env.skip.iter().map(|p| p.to_string_lossy().to_lowercase()).collect();
+    let norm = |p: &Path| {
+        p.to_string_lossy()
+            .to_lowercase()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_string()
+    };
+    let skip: Vec<String> = env.skip.iter().map(|p| norm(p)).collect();
 
     'roots: for root in &roots {
         if std::fs::read_dir(root).is_err() {
@@ -113,14 +126,7 @@ pub fn locate(env: &Env, mode: Mode, folders: &[PathBuf], cancel: &AtomicBool, p
                 if iocs::SKIP_DIRS.contains(&name.as_str()) {
                     return false;
                 }
-                let p = e.path().to_string_lossy().to_lowercase();
-                if skip
-                    .iter()
-                    .any(|s| p.trim_end_matches(['\\', '/']) == s.trim_end_matches(['\\', '/']))
-                {
-                    return false;
-                }
-                true
+                !skip.contains(&norm(e.path()))
             });
         for entry in walk {
             if cancel.load(Ordering::Relaxed) {
